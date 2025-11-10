@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("STUDENT")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  blocked   Boolean  @default(false)
+
+  items            Item[]
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
+  notifications    Notification[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Item {
+  id          String   @id @default(uuid())
+  title       String
+  category    String
+  description String
+  price       Float
+  imageUrl    String?
+  status      String   @default("AVAILABLE")
+  urgent      Boolean  @default(false)
+  postedById  String
+  postedBy    User     @relation(fields: [postedById], references: [id], onDelete: Cascade)
+  datePosted  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages Message[]
+
+  @@index([postedById])
+  @@index([status])
+  @@index([category])
+  @@index([datePosted])
+  @@map("items")
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  itemId     String?
+  message    String
+  read       Boolean  @default(false)
+  timestamp  DateTime @default(now())
+
+  sender   User  @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User  @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  item     Item? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([itemId])
+  @@index([timestamp])
+  @@map("messages")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+
