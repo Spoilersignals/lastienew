@@ -1,4 +1,4 @@
-import { PrismaClient, Category, ItemStatus, Role } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -13,7 +13,7 @@ async function main() {
       name: 'Admin User',
       email: 'admin@university.edu',
       password: hashedPassword,
-      role: Role.ADMIN,
+      role: 'ADMIN',
     },
   });
 
@@ -45,73 +45,73 @@ async function main() {
     prisma.item.create({
       data: {
         title: 'Introduction to Computer Science Textbook',
-        category: Category.BOOKS,
+        category: 'BOOKS',
         description: 'Barely used CS101 textbook. Great condition, no highlights or notes.',
         price: 45.0,
         imageUrl: null,
         urgent: false,
         postedById: users[0].id,
-        status: ItemStatus.AVAILABLE,
+        status: 'AVAILABLE',
       },
     }),
     prisma.item.create({
       data: {
         title: 'MacBook Pro 2019 - 13 inch',
-        category: Category.ELECTRONICS,
+        category: 'ELECTRONICS',
         description: 'Selling my MacBook Pro. 8GB RAM, 256GB SSD. Works perfectly!',
         price: 650.0,
         imageUrl: null,
         urgent: true,
         postedById: users[1].id,
-        status: ItemStatus.AVAILABLE,
+        status: 'AVAILABLE',
       },
     }),
     prisma.item.create({
       data: {
         title: 'Twin Size Mattress',
-        category: Category.FURNITURE,
+        category: 'FURNITURE',
         description: 'Moving out! Free mattress, good condition. Pick up only.',
         price: 0,
         imageUrl: null,
         urgent: false,
         postedById: users[0].id,
-        status: ItemStatus.AVAILABLE,
+        status: 'AVAILABLE',
       },
     }),
     prisma.item.create({
       data: {
         title: 'Scientific Calculator TI-84',
-        category: Category.ELECTRONICS,
+        category: 'ELECTRONICS',
         description: 'Used for engineering classes. All functions working.',
         price: 80.0,
         imageUrl: null,
         urgent: false,
         postedById: users[2].id,
-        status: ItemStatus.AVAILABLE,
+        status: 'AVAILABLE',
       },
     }),
     prisma.item.create({
       data: {
         title: 'Winter Jacket - Size M',
-        category: Category.CLOTHING,
+        category: 'CLOTHING',
         description: 'North Face winter jacket, barely worn. Great for cold weather.',
         price: 120.0,
         imageUrl: null,
         urgent: false,
         postedById: users[1].id,
-        status: ItemStatus.AVAILABLE,
+        status: 'AVAILABLE',
       },
     }),
     prisma.item.create({
       data: {
         title: 'Basketball',
-        category: Category.SPORTS,
+        category: 'SPORTS',
         description: 'Official size basketball, good condition.',
         price: 15.0,
         imageUrl: null,
         urgent: false,
         postedById: users[2].id,
-        status: ItemStatus.AVAILABLE,
+        status: 'AVAILABLE',
       },
     }),
   ]);

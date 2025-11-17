@@ -8,14 +8,17 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   @default("STUDENT")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  blocked   Boolean  @default(false)
+  id                   String    @id @default(uuid())
+  name                 String
+  email                String    @unique
+  password             String
+  role                 String    @default("STUDENT")
+  emailVerified        Boolean   @default(false)
+  emailVerificationToken String? @unique
+  tokenExpiry          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  blocked              Boolean   @default(false)
 
   items            Item[]
   sentMessages     Message[] @relation("SentMessages")

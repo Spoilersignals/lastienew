@@ -1,153 +1,20 @@
 import express from 'express';
-import { PrismaClient, ItemStatus } from '@prisma/client';
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth';
-import { createNotification } from '../utils/notifications';
+import { PrismaClient } from '@prisma/client';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import bcrypt from 'bcryptjs';
+import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-router.use(authenticate);
-router.use(requireAdmin);
-
-router.get('/stats', async (req, res) => {
-  try {
-    const [totalUsers, totalItems, activeItems, flaggedItems, totalMessages] = await Promise.all([
-      prisma.user.count(),
-      prisma.item.count(),
-      prisma.item.count({ where: { status: ItemStatus.AVAILABLE } }),
-      prisma.item.count({ where: { status: ItemStatus.FLAGGED } }),
-      prisma.message.count(),
-    ]);
-
-    const recentUsers = await prisma.user.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, email: true, createdAt: true },
-    });
-
-    const recentItems = await prisma.item.findMany({
-      take: 10,
-      orderBy: { datePosted: 'desc' },
-      include: {
-        postedBy: {
-          select: { id: true, name: true },
-        },
-      },
-    });
-
-    res.json({
-      stats: {
-        totalUsers,
-        totalItems,
-        activeItems,
-        flaggedItems,
-        totalMessages,
-      },
-      recentUsers,
-      recentItems,
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch stats' });
+const requireAdmin = (req: AuthRequest, res: express.Response, next: express.NextFunction) => {
+  if (req.userRole !== 'ADMIN') {
+    return res.status(403).json({ error: 'Admin access required' });
   }
-});
+  next();
+};
 
-router.get('/items/pending', async (req, res) => {
-  try {
-    const items = await prisma.item.findMany({
-      where: { status: ItemStatus.PENDING_APPROVAL },
-      orderBy: { datePosted: 'desc' },
-      include: {
-        postedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
-
-    res.json(items);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch pending items' });
-  }
-});
-
-router.get('/items/flagged', async (req, res) => {
-  try {
-    const items = await prisma.item.findMany({
-      where: { status: ItemStatus.FLAGGED },
-      orderBy: { datePosted: 'desc' },
-      include: {
-        postedBy: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
-
-    res.json(items);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch flagged items' });
-  }
-});
-
-router.put('/items/:id/approve', async (req, res) => {
-  try {
-    const item = await prisma.item.update({
-      where: { id: req.params.id },
-      data: { status: ItemStatus.AVAILABLE },
-      include: {
-        postedBy: true,
-      },
-    });
-
-    await createNotification(
-      item.postedById,
-      'ITEM_APPROVED',
-      'Item Approved',
-      `Your item "${item.title}" has been approved and is now live`
-    );
-
-    res.json({ message: 'Item approved', item });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to approve item' });
-  }
-});
-
-router.put('/items/:id/flag', async (req, res) => {
-  const { reason } = req.body;
-
-  try {
-    const item = await prisma.item.update({
-      where: { id: req.params.id },
-      data: { status: ItemStatus.FLAGGED },
-      include: {
-        postedBy: true,
-      },
-    });
-
-    await createNotification(
-      item.postedById,
-      'ITEM_FLAGGED',
-      'Item Flagged',
-      `Your item "${item.title}" has been flagged. Reason: ${reason || 'Policy violation'}`
-    );
-
-    res.json({ message: 'Item flagged', item });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to flag item' });
-  }
-});
-
-router.delete('/items/:id', async (req, res) => {
-  try {
-    await prisma.item.delete({
-      where: { id: req.params.id },
-    });
-
-    res.json({ message: 'Item deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete item' });
-  }
-});
-
-router.get('/users', async (req, res) => {
+router.get('/users', authenticate, requireAdmin, async (req: AuthRequest, res) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -155,10 +22,14 @@ router.get('/users', async (req, res) => {
         name: true,
         email: true,
         role: true,
-        createdAt: true,
+        emailVerified: true,
         blocked: true,
+        createdAt: true,
         _count: {
-          select: { items: true, sentMessages: true },
+          select: {
+            items: true,
+            sentMessages: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -170,29 +41,224 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.put('/users/:id/block', async (req, res) => {
+router.post(
+  '/users',
+  authenticate,
+  requireAdmin,
+  [
+    body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
+    body('email').isEmail().withMessage('Valid email required'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+    body('role').optional().isIn(['STUDENT', 'ADMIN']).withMessage('Invalid role'),
+  ],
+  async (req: AuthRequest, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { name, email, password, role = 'STUDENT' } = req.body;
+
+    try {
+      const existingUser = await prisma.user.findUnique({ where: { email } });
+      if (existingUser) {
+        return res.status(400).json({ error: 'Email already registered' });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role,
+          emailVerified: true,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          emailVerified: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(201).json({ message: 'User created successfully', user });
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to create user' });
+    }
+  }
+);
+
+router.put('/users/:userId/block', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  const { userId } = req.params;
+  const { blocked } = req.body;
+
   try {
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: { blocked: true },
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role === 'ADMIN') {
+      return res.status(403).json({ error: 'Cannot block admin users' });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { blocked: blocked === true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        blocked: true,
+      },
     });
 
-    res.json({ message: 'User blocked', user });
+    res.json({ message: 'User updated successfully', user: updatedUser });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to block user' });
+    res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
-router.put('/users/:id/unblock', async (req, res) => {
+router.delete('/users/:userId', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  const { userId } = req.params;
+
   try {
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: { blocked: false },
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role === 'ADMIN') {
+      return res.status(403).json({ error: 'Cannot delete admin users' });
+    }
+
+    await prisma.user.delete({ where: { id: userId } });
+
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+router.get('/items', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const items = await prisma.item.findMany({
+      include: {
+        postedBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+      orderBy: { datePosted: 'desc' },
     });
 
-    res.json({ message: 'User unblocked', user });
+    res.json(items);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to unblock user' });
+    res.status(500).json({ error: 'Failed to fetch items' });
+  }
+});
+
+router.put('/items/:itemId/status', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  const { itemId } = req.params;
+  const { status } = req.body;
+
+  if (!['AVAILABLE', 'SOLD', 'PENDING', 'REMOVED'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  try {
+    const item = await prisma.item.findUnique({ where: { id: itemId } });
+
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    const updatedItem = await prisma.item.update({
+      where: { id: itemId },
+      data: { status },
+      include: {
+        postedBy: {
+          select: { id: true, name: true },
+        },
+      },
+    });
+
+    res.json({ message: 'Item status updated successfully', item: updatedItem });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update item status' });
+  }
+});
+
+router.delete('/items/:itemId', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  const { itemId } = req.params;
+
+  try {
+    const item = await prisma.item.findUnique({ where: { id: itemId } });
+
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    await prisma.item.delete({ where: { id: itemId } });
+
+    res.json({ message: 'Item deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete item' });
+  }
+});
+
+router.get('/stats', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const [totalUsers, totalItems, totalMessages, verifiedUsers] = await Promise.all([
+      prisma.user.count(),
+      prisma.item.count(),
+      prisma.message.count(),
+      prisma.user.count({ where: { emailVerified: true } }),
+    ]);
+
+    const itemsByStatus = await prisma.item.groupBy({
+      by: ['status'],
+      _count: true,
+    });
+
+    res.json({
+      totalUsers,
+      totalItems,
+      totalMessages,
+      verifiedUsers,
+      itemsByStatus,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+});
+
+router.get('/messages', authenticate, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const messages = await prisma.message.findMany({
+      include: {
+        sender: {
+          select: { id: true, name: true, email: true },
+        },
+        receiver: {
+          select: { id: true, name: true, email: true },
+        },
+        item: {
+          select: { id: true, title: true },
+        },
+      },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    res.json(messages);
+  } catch (error) {
+    console.error('Error fetching admin messages:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
 

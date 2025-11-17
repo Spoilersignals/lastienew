@@ -1,5 +1,5 @@
 import express from 'express';
-import { PrismaClient, ItemStatus } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { containsProfanity, validatePrice } from '../utils/validation';
@@ -78,7 +78,7 @@ router.post(
           imageUrl,
           urgent: urgent === 'true',
           postedById: req.userId!,
-          status: ItemStatus.AVAILABLE,
+          status: 'AVAILABLE',
         },
         include: {
           postedBy: {
@@ -89,6 +89,7 @@ router.post(
 
       res.status(201).json({ message: 'Item posted successfully', item });
     } catch (error) {
+      console.error('Error posting item:', error);
       res.status(500).json({ error: 'Failed to post item' });
     }
   }
@@ -107,7 +108,7 @@ router.get('/', async (req, res) => {
   } = req.query;
 
   try {
-    const where: any = { status: status || ItemStatus.AVAILABLE };
+    const where: any = { status: status || 'AVAILABLE' };
 
     if (category) where.category = category;
     if (urgent === 'true') where.urgent = true;
@@ -118,8 +119,8 @@ router.get('/', async (req, res) => {
     }
     if (search) {
       where.OR = [
-        { title: { contains: search as string, mode: 'insensitive' } },
-        { description: { contains: search as string, mode: 'insensitive' } },
+        { title: { contains: search as string } },
+        { description: { contains: search as string } },
       ];
     }
 
@@ -151,6 +152,7 @@ router.get('/', async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Error fetching items:', error);
     res.status(500).json({ error: 'Failed to fetch items' });
   }
 });

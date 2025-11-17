@@ -1,158 +1,188 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { useAuthStore } from '../store/authStore';
 
+interface Conversation {
+  userId: string;
+  userName: string;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
+  item?: { id: string; title: string };
+}
+
+interface Message {
+  id: string;
+  message: string;
+  timestamp: string;
+  senderId: string;
+  receiverId: string;
+  sender: { id: string; name: string };
+  receiver: { id: string; name: string };
+  item?: { id: string; title: string };
+}
+
 export default function MessagesPage() {
+  const navigate = useNavigate();
   const { user } = useAuthStore();
-  const [conversations, setConversations] = useState<any>({});
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchInbox();
+    fetchConversations();
   }, []);
 
   useEffect(() => {
-    if (selectedUser) {
-      fetchConversation(selectedUser);
+    if (selectedUserId) {
+      fetchMessages(selectedUserId);
     }
-  }, [selectedUser]);
+  }, [selectedUserId]);
 
-  const fetchInbox = async () => {
+  const fetchConversations = async () => {
     try {
-      const response = await api.get('/messages/inbox');
+      const response = await api.get('/messages/conversations');
       setConversations(response.data);
-      if (Object.keys(response.data).length > 0 && !selectedUser) {
-        setSelectedUser(Object.keys(response.data)[0]);
-      }
     } catch (error) {
-      console.error('Failed to fetch inbox:', error);
+      console.error('Failed to fetch conversations:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchConversation = async (userId: string) => {
+  const fetchMessages = async (userId: string) => {
     try {
-      const response = await api.get(`/messages/conversation/${userId}`);
+      const response = await api.get(`/messages/${userId}`);
       setMessages(response.data);
     } catch (error) {
-      console.error('Failed to fetch conversation:', error);
+      console.error('Failed to fetch messages:', error);
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedUser) return;
+    if (!newMessage.trim() || !selectedUserId) return;
 
     try {
       await api.post('/messages', {
-        receiverId: selectedUser,
+        receiverId: selectedUserId,
         message: newMessage,
       });
+
       setNewMessage('');
-      fetchConversation(selectedUser);
+      await fetchMessages(selectedUserId);
+      await fetchConversations();
     } catch (error) {
       console.error('Failed to send message:', error);
     }
   };
 
-  const getOtherUser = (userId: string) => {
-    const userMessages = conversations[userId];
-    if (!userMessages || userMessages.length === 0) return null;
-    const msg = userMessages[0];
-    return msg.sender.id === user?.id ? msg.receiver : msg.sender;
-  };
+  const selectedConversation = conversations.find((c) => c.userId === selectedUserId);
 
   if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">Loading...</div>
-      </div>
-    );
+    return <div className="text-center py-8">Loading conversations...</div>;
   }
-
-  const conversationList = Object.keys(conversations);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-4xl font-bold text-gray-900 mb-8">Messages</h1>
 
-      {conversationList.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg shadow-md">
-          <p className="text-gray-600 text-lg">No messages yet. Start a conversation by contacting sellers!</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-[600px]">
-          <div className="bg-white rounded-lg shadow-md overflow-y-auto">
-            <div className="p-4 border-b">
-              <h2 className="font-semibold text-gray-900">Conversations</h2>
-            </div>
-            <div>
-              {conversationList.map((userId) => {
-                const otherUser = getOtherUser(userId);
-                if (!otherUser) return null;
-                return (
-                  <button
-                    key={userId}
-                    onClick={() => setSelectedUser(userId)}
-                    className={`w-full text-left p-4 border-b hover:bg-gray-50 ${
-                      selectedUser === userId ? 'bg-primary-50' : ''
-                    }`}
-                  >
-                    <div className="font-semibold text-gray-900">{otherUser.name}</div>
-                    <div className="text-sm text-gray-500 truncate">
-                      {conversations[userId][conversations[userId].length - 1].message}
+      <div className="bg-white rounded-lg shadow-md" style={{ height: '600px' }}>
+        <div className="grid grid-cols-3 h-full">
+          {/* Conversations List */}
+          <div className="col-span-1 border-r border-gray-200 overflow-y-auto">
+            <div className="p-4">
+              <h2 className="text-lg font-semibold mb-4">Conversations</h2>
+              {conversations.length === 0 ? (
+                <p className="text-gray-500 text-sm">No conversations yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {conversations.map((conv) => (
+                    <div
+                      key={conv.userId}
+                      onClick={() => setSelectedUserId(conv.userId)}
+                      className={`p-3 rounded-lg cursor-pointer hover:bg-gray-50 ${
+                        selectedUserId === conv.userId ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-semibold text-sm">{conv.userName}</span>
+                        {conv.unreadCount > 0 && (
+                          <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-1">
+                            {conv.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      {conv.item && (
+                        <p className="text-xs text-gray-500 mb-1">Re: {conv.item.title}</p>
+                      )}
+                      <p className="text-xs text-gray-600 truncate">{conv.lastMessage}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(conv.lastMessageTime).toLocaleString()}
+                      </p>
                     </div>
-                  </button>
-                );
-              })}
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="md:col-span-2 bg-white rounded-lg shadow-md flex flex-col">
-            {selectedUser ? (
+          {/* Messages Area */}
+          <div className="col-span-2 flex flex-col">
+            {selectedUserId ? (
               <>
-                <div className="p-4 border-b">
-                  <h2 className="font-semibold text-gray-900">{getOtherUser(selectedUser)?.name}</h2>
+                {/* Header */}
+                <div className="p-4 border-b border-gray-200">
+                  <h3 className="font-semibold text-lg">{selectedConversation?.userName}</h3>
+                  {selectedConversation?.item && (
+                    <p className="text-sm text-gray-500">About: {selectedConversation.item.title}</p>
+                  )}
                 </div>
 
-                <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   {messages.map((msg) => (
                     <div
                       key={msg.id}
                       className={`flex ${msg.senderId === user?.id ? 'justify-end' : 'justify-start'}`}
                     >
                       <div
-                        className={`max-w-xs px-4 py-2 rounded-lg ${
+                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                           msg.senderId === user?.id
-                            ? 'bg-primary-600 text-white'
+                            ? 'bg-blue-500 text-white'
                             : 'bg-gray-200 text-gray-900'
                         }`}
                       >
-                        <p>{msg.message}</p>
-                        <p className="text-xs mt-1 opacity-75">
-                          {new Date(msg.timestamp).toLocaleString()}
+                        <p className="text-sm">{msg.message}</p>
+                        <p
+                          className={`text-xs mt-1 ${
+                            msg.senderId === user?.id ? 'text-blue-100' : 'text-gray-500'
+                          }`}
+                        >
+                          {new Date(msg.timestamp).toLocaleTimeString()}
                         </p>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <form onSubmit={handleSendMessage} className="p-4 border-t">
+                {/* Input */}
+                <form onSubmit={sendMessage} className="p-4 border-t border-gray-200">
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="Type a message..."
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                     <button
                       type="submit"
-                      className="bg-primary-600 text-white px-6 py-2 rounded-md hover:bg-primary-700"
+                      disabled={!newMessage.trim()}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
                     >
                       Send
                     </button>
@@ -160,13 +190,13 @@ export default function MessagesPage() {
                 </form>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-gray-500">
-                Select a conversation to start messaging
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Select a conversation to view messages
               </div>
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

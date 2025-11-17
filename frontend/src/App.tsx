@@ -10,6 +10,7 @@ import PostItemPage from './pages/PostItemPage';
 import MessagesPage from './pages/MessagesPage';
 import MyItemsPage from './pages/MyItemsPage';
 import AdminDashboard from './pages/AdminDashboard';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 
 function App() {
   const { user } = useAuthStore();
@@ -21,6 +22,7 @@ function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/items" />} />
         <Route path="/register" element={!user ? <RegisterPage /> : <Navigate to="/items" />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/items/:id" element={<ItemDetailPage />} />
         <Route path="/post-item" element={user ? <PostItemPage /> : <Navigate to="/login" />} />
